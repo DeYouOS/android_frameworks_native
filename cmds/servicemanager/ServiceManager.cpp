@@ -193,6 +193,12 @@ Status ServiceManager::checkService(const std::string& name, sp<IBinder>* outBin
 }
 
 sp<IBinder> ServiceManager::tryGetService(const std::string& name, bool startIfNotFound) {
+
+    int uid = getuid();
+    if(AID_APP_START > uid && AID_APP_END < uid) {
+        if(name.find("profile") != std::string::npos || name.find("lineage") != std::string::npos)
+            return nullptr;
+    }
     auto ctx = mAccess->getCallingContext();
 
     sp<IBinder> out;
@@ -303,8 +309,22 @@ Status ServiceManager::listServices(int32_t dumpPriority, std::vector<std::strin
         return Status::fromExceptionCode(Status::EX_SECURITY);
     }
 
+    ServiceMap pService;
+    pService.insert(mNameToService.begin(), mNameToService.end());
+
+    int uid = getuid();
+    if(AID_APP_START > uid && AID_APP_END < uid) {
+        for(auto it = pService.begin(); it != pService.end();){
+            if(it->first.find("profile") != std::string::npos || it->first.find("lineage") != std::string::npos){
+                it = pService.erase(it);
+            } else {
+                it++;
+            }
+        }
+    }
+
     size_t toReserve = 0;
-    for (auto const& [name, service] : mNameToService) {
+    for (auto const& [name, service] : pService) {
         (void) name;
 
         if (service.dumpPriority & dumpPriority) ++toReserve;
@@ -313,7 +333,7 @@ Status ServiceManager::listServices(int32_t dumpPriority, std::vector<std::strin
     CHECK(outList->empty());
 
     outList->reserve(toReserve);
-    for (auto const& [name, service] : mNameToService) {
+    for (auto const& [name, service] : pService) {
         (void) service;
 
         if (service.dumpPriority & dumpPriority) {
